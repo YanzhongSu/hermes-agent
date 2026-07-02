@@ -15200,9 +15200,9 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
         provider = persisted.get("provider")
         if provider:
             # Re-resolve credentials for the persisted provider. On failure
-            # (e.g. credentials were removed since the switch) keep the
-            # credential-less override — _resolve_session_agent_runtime falls
-            # back to env-based resolution and applies model/provider on top.
+            # (e.g. credentials were removed since the switch), keep only the
+            # model part that cannot pair a provider endpoint with
+            # unrelated credentials from the global runtime fallback.
             try:
                 runtime = _resolve_runtime_agent_kwargs_for_provider(provider)
                 override["api_key"] = runtime.get("api_key")
@@ -15210,9 +15210,11 @@ class GatewayRunner(GatewayAuthorizationMixin, GatewayKanbanWatchersMixin, Gatew
                 if not override.get("base_url"):
                     override["base_url"] = runtime.get("base_url")
             except Exception:
+                override.pop("provider", None)
+                override.pop("base_url", None)
                 logger.debug(
                     "Credential re-resolution failed for persisted override "
-                    "(provider=%s); using credential-less override",
+                    "(provider=%s); using model-only override",
                     provider, exc_info=True,
                 )
         self._session_model_overrides[session_key] = override

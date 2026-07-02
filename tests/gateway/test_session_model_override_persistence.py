@@ -205,7 +205,7 @@ def test_runner_rehydrate_noop_without_persisted_override(store_factory):
 
 
 def test_runner_rehydrate_survives_credential_resolution_failure(store_factory):
-    """Missing credentials degrade to a credential-less override, not a crash."""
+    """Missing credentials degrade to model-only override, not a crash."""
     store = store_factory()
     entry = store.get_or_create_session(_make_source())
     session_key = entry.session_key
@@ -220,7 +220,67 @@ def test_runner_rehydrate_survives_credential_resolution_failure(store_factory):
 
     override = runner._session_model_overrides[session_key]
     assert override["model"] == "gpt-5o"
+    assert "provider" not in override
+    assert "base_url" not in override
     assert override.get("api_key") is None
+
+
+def test_runner_rehydrate_failure_does_not_pair_provider_with_wrong_key(store_factory):
+    store = store_factory()
+    entry = store.get_or_create_session(_make_source())
+    session_key = entry.session_key
+    store.set_model_override(session_key, OVERRIDE)
+
+    runner = _make_runner(store)
+    with patch(
+        "gateway.run._resolve_runtime_agent_kwargs_for_provider",
+        side_effect=RuntimeError("no openai credentials"),
+    ), patch(
+        "gateway.run._resolve_gateway_model",
+        return_value="claude-global",
+    ), patch(
+        "gateway.run._resolve_runtime_agent_kwargs",
+        return_value={
+            "provider": "anthropic",
+            "api_key": "anthropic-key",
+            "base_url": "https://api.anthropic.com",
+            "api_mode": "anthropic_messages",
+        },
+    ):
+        model, runtime = runner._resolve_session_agent_runtime(session_key=session_key)
+
+    assert model == "gpt-5o"
+    assert runtime["provider"] == "anthropic"
+    assert runtime["api_key"] == "anthropic-key"
+    assert runtime["base_url"] == "https://api.anthropic.com"
+
+
+def test_api_server_session_override_rehydrates_from_runner(store_factory, monkeypatch):
+    store = store_factory()
+    entry = store.get_or_create_session(_make_source())
+    session_key = entry.session_key
+    store.set_model_override(session_key, OVERRIDE)
+
+    runner = _make_runner(store_factory())
+    with patch(
+        "gateway.run._resolve_runtime_agent_kwargs_for_provider",
+        return_value={
+            "api_key": "sk-fresh-from-keychain",
+            "api_mode": "responses",
+            "base_url": "https://api.openai.example/v1",
+            "provider": "openai",
+        },
+    ):
+        monkeypatch.setattr("gateway.run._gateway_runner_ref", lambda: runner)
+        from gateway.platforms.api_server import APIServerAdapter
+
+        adapter = APIServerAdapter.__new__(APIServerAdapter)
+        override = adapter._session_model_override_for(session_key)
+
+    assert override is not None
+    assert override["model"] == "gpt-5o"
+    assert override["provider"] == "openai"
+    assert override["api_key"] == "sk-fresh-from-keychain"
 
 
 def test_sanitize_model_override():

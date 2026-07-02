@@ -1201,6 +1201,9 @@ class APIServerAdapter(BasePlatformAdapter):
             runner = _gateway_runner_ref()
             if runner is None:
                 return None
+            rehydrate = getattr(runner, "_rehydrate_session_model_override", None)
+            if callable(rehydrate):
+                rehydrate(session_key)
             override = runner._session_model_overrides.get(session_key)
             return dict(override) if isinstance(override, dict) else None
         except Exception:
