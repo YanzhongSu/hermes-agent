@@ -205,9 +205,10 @@ class TestAtomicSnapshotConcurrencyBehavioral:
         writer = (
             "for i in $(seq 1 80); do "
             "export BIG_$i=$(head -c 600 /dev/zero | tr '\\0' x); "
-            f"{{ ( set -o pipefail; export -p | {_SNAPSHOT_ENV_FILTER} > {_snap_tmp} ) "
-            f"&& mv -f {_snap_tmp} {_q(snap)}; }} "
-            f"2>/dev/null || rm -f {_snap_tmp} 2>/dev/null || true; "
+            f"{{ __hermes_snap_tmp={_snap_tmp}; set -o pipefail; "
+            f"export -p | {_SNAPSHOT_ENV_FILTER} > \"$__hermes_snap_tmp\" "
+            f"&& mv -f \"$__hermes_snap_tmp\" {_q(snap)}; }} "
+            f"2>/dev/null || rm -f \"$__hermes_snap_tmp\" 2>/dev/null || true; "
             "done"
         )
         # Reader: repeatedly source the snapshot and check PATH never absorbs
@@ -244,9 +245,10 @@ class TestAtomicSnapshotConcurrencyBehavioral:
         # must then NOT run (&&) and not clobber snap.
         bad_tmp = _q("/nonexistent-dir/snap.tmp.") + "$BASHPID"
         script = (
-            f"{{ ( set -o pipefail; export -p | {_SNAPSHOT_ENV_FILTER} > {bad_tmp} ) "
-            f"&& mv -f {bad_tmp} {_q(snap)}; }} "
-            f"2>/dev/null || rm -f {bad_tmp} 2>/dev/null || true"
+            f"{{ __hermes_snap_tmp={bad_tmp}; set -o pipefail; "
+            f"export -p | {_SNAPSHOT_ENV_FILTER} > \"$__hermes_snap_tmp\" "
+            f"&& mv -f \"$__hermes_snap_tmp\" {_q(snap)}; }} "
+            f"2>/dev/null || rm -f \"$__hermes_snap_tmp\" 2>/dev/null || true"
         )
         self._run(script)
         out = self._run(f"cat {_q(snap)}")
